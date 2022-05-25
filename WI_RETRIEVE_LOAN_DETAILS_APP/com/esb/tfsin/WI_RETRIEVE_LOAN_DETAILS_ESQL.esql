@@ -1,0 +1,96 @@
+BROKER SCHEMA com.esb.tfsin
+
+
+CREATE COMPUTE MODULE WI_RETRIEVE_LOAN_DETAILS_FLOW_RetrieveDetails
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE TRANSACTIONID CHARACTER InputRoot.JSON.Data.Transaction_ID;
+		SET Environment.DefaultRecord.CorelationId 		= TRANSACTIONID;
+		SET Environment.DefaultRecord.IntegrationNode	= BrokerName;
+		SET Environment.DefaultRecord.IntegrationServer	= ExecutionGroupLabel;
+		SET Environment.DefaultRecord.ApplicationName	= ApplicationLabel;
+		SET Environment.DefaultRecord.FlowName			= MessageFlowLabel;
+		SET Environment.DefaultRecord.Logtype			= 'Request';
+		SET Environment.DefaultRecord.LOGLEVEL			= 'Information';
+		SET Environment.AuditRecord.BackendURL			= '-';
+		SET Environment.AuditRecord.FLAG				= 'P';
+		SET Environment.AuditRecord.ESBURL 				= InputRoot.HTTPInputHeader."X-Original-HTTP-Command";
+		DECLARE blobInputMsg BLOB ASBITSTREAM(InputRoot.JSON.Data CCSID 1208 ENCODING 546);
+		DECLARE charInputMsg1 CHARACTER CAST(blobInputMsg AS CHARACTER CCSID 1208 ENCODING 546);
+		SET Environment.DefaultRecord.Request			= charInputMsg1;
+		SET Environment.DefaultRecord.BACKEND_REQUEST	= charInputMsg1;
+		SET Environment.DefaultRecord.BACKEND_RESPONSE	= '';
+		SET Environment.AuditRecord.Response			= '';
+		SET Environment.AuditRecord.TransactionCode		= '200';
+		SET Environment.AuditRecord.TransactionStatus	= 'Success';
+		SET Environment.AuditRecord.TRANSACTIONFLAG		= 'Y';
+		SET Environment.AuditRecord.REQUESTHEADER 		= InputRoot.HTTPInputHeader;
+		SET Environment.AuditRecord.RESPONSEHEADER		= Environment.ESB.HttpInputHeader;
+		PROPAGATE TO TERMINAL 'out2' DELETE NONE;
+		DECLARE decodedblb BLOB BASE64DECODE(TRIM('Basic ' FROM InputRoot.HTTPInputHeader.Authorization));
+		DECLARE decodedstr CHARACTER CAST(decodedblb as CHARACTER CCSID 1208);
+		SET Environment.user=SUBSTRING(decodedstr BEFORE ':');
+		SET Environment.password=SUBSTRING(decodedstr AFTER ':');
+		PROPAGATE TO TERMINAL 'out1' DELETE NONE;
+		SET Environment.userdetails = THE(SELECT * FROM Environment.Configdata.basic.authentication[] AS II WHERE II.username = Environment.user);
+		IF EXISTS(Environment.userdetails[]) THEN
+			IF Environment.userdetails.password = Environment.password THEN
+				DECLARE inputStringDate CHARACTER InputRoot.JSON.Data.Date;
+				DECLARE outputStringDate DATE;
+				DECLARE patternInput CHARACTER 'dd-MMM-yy';
+				SET outputStringDate = CAST(inputStringDate AS DATE FORMAT patternInput);
+			    DECLARE LANNO CHARACTER CAST(InputRoot.JSON.Data.Lan_NO AS CHARACTER CCSID 1208 ENCODING 546);
+				IF LENGTH(TRANSACTIONID)<='30' THEN
+					IF LENGTH(LANNO)<='30' THEN
+					    CALL RetrieveLoanDetails(TRANSACTIONID, outputStringDate, InputRoot.JSON.Data.Lan_NO, Environment.ResultSet1[], Environment.ResultSet2[]);
+					    IF Environment.ResultSet1 = '1' THEN
+						    SET Environment.LoanDetails[] = PASSTHRU('SELECT TRANSACTIONID, LAN_NO, LOAN_AMT, FUTURE_INSTLS, TENURE, INSTL_OD, LAST_EMI_AMT, DATE_LAST_CYCLE, CURR_EMI_AMT, DATE_CURR_CYCLE FROM PCR_STAGE.LEA_LOAN_DETAILS_DATA WHERE LAN_NO = ? AND FLAG = ?', InputRoot.JSON.Data.Lan_NO, 'U');
+						    PASSTHRU('UPDATE PCR_STAGE.LEA_LOAN_DETAILS_DATA SET FLAG = ? WHERE LAN_NO = ? AND FLAG = ?', 'P', InputRoot.JSON.Data.Lan_NO, 'U');
+						    SET OutputRoot.JSON.Data.Transaction_ID 					= Environment.LoanDetails.TRANSACTIONID;
+							SET OutputRoot.JSON.Data.Res_Code 							= Environment.ResultSet1;
+							SET OutputRoot.JSON.Data.Res_Desc 							= Environment.ResultSet2;
+							SET OutputRoot.JSON.Data.Lan_NO 							= Environment.LoanDetails.LAN_NO;
+							SET OutputRoot.JSON.Data.Loan_Amount						= Environment.LoanDetails.LOAN_AMT;
+							SET OutputRoot.JSON.Data.No_of_Future_Installments 			= Environment.LoanDetails.FUTURE_INSTLS;
+							SET OutputRoot.JSON.Data.Tenure 							= Environment.LoanDetails.TENURE;
+							SET OutputRoot.JSON.Data.Instalment_Overdue 				= Environment.LoanDetails.INSTL_OD;
+							SET OutputRoot.JSON.Data.EMI_Amount_Last_Cycle				= Environment.LoanDetails.LAST_EMI_AMT;
+							SET OutputRoot.JSON.Data.Presentation_Date_Last_Cycle		= Environment.LoanDetails.DATE_LAST_CYCLE;
+							SET OutputRoot.JSON.Data.EMI_Amount_Present_Cycle 			= Environment.LoanDetails.CURR_EMI_AMT;
+							SET OutputRoot.JSON.Data.Presentation_Date_Present_Cycle	= Environment.LoanDetails.DATE_CURR_CYCLE;
+					    ELSE
+					    	SET OutputRoot.JSON.Data.Transaction_ID 					= TRANSACTIONID;
+							SET OutputRoot.JSON.Data.Res_Code 							= Environment.ResultSet1;
+							SET OutputRoot.JSON.Data.Res_Desc 							= Environment.ResultSet2;
+					    END IF;
+					ELSE		
+						SET OutputRoot.JSON.Data.Transaction_ID = TRANSACTIONID;
+						SET OutputRoot.JSON.Data.Res_Code 		= '2';
+						SET OutputRoot.JSON.Data.Res_Desc 		= 'Lan_ID should not be more than 30 characters';
+					END IF;
+				ELSE
+					SET OutputRoot.JSON.Data.Transaction_ID = TRANSACTIONID;
+					SET OutputRoot.JSON.Data.Res_Code 		= '2';
+					SET OutputRoot.JSON.Data.Res_Desc 		= 'TRANSACTION ID should not be more than 30 characters';
+				END IF;
+			ELSE
+				SET OutputRoot.JSON.Data.Transaction_ID = TRANSACTIONID;
+				SET OutputRoot.JSON.Data.Res_Code 		= '401';
+				SET OutputRoot.JSON.Data.Res_Desc 		= 'Incorrect Password/Authentication Failure';
+			END IF;
+		ELSE
+			SET OutputRoot.JSON.Data.Transaction_ID = TRANSACTIONID;
+			SET OutputRoot.JSON.Data.Res_Code 		= '401';
+			SET OutputRoot.JSON.Data.Res_Desc 		= 'Incorrect User/Authentication Failure';
+		END IF;
+		PROPAGATE TO TERMINAL 'out' DELETE NONE;
+		DECLARE blobInputMsg1 BLOB ASBITSTREAM(OutputRoot.JSON.Data CCSID 1208 ENCODING 546);
+		DECLARE charInputMsg4 CHARACTER CAST(blobInputMsg1 AS CHARACTER CCSID 1208 ENCODING 546);
+		SET Environment.AuditRecord.Response=charInputMsg4;
+		PROPAGATE TO TERMINAL 'out2';
+		RETURN FALSE;
+	END;
+	CREATE PROCEDURE RetrieveLoanDetails(INOUT TRANSACTIONID CHAR, IN REQUEST_DATE DATE, IN LAN_NO CHAR, OUT RES_CODE CHAR, OUT RES_DESC CHAR)
+	LANGUAGE DATABASE
+	EXTERNAL NAME "PCR_STAGE.FETCH_LOAN_DETAILS";
+END MODULE;
