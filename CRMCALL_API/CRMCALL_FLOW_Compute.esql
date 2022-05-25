@@ -1,0 +1,42 @@
+
+/*************************************************************************************
+* *
+* Purpose: Generate signature and verifies that signature to show that response *
+* Module Name: CRMCALL_FLOW_Compute *
+* *
+*************************************************************************************/
+
+CREATE COMPUTE MODULE CRMCALL_FLOW_Compute
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		CREATE FIELD Environment.Variables;
+		DECLARE ev REFERENCE TO Environment.Variables;
+		DECLARE blobInputMsg1 BLOB ASBITSTREAM(InputRoot.JSON.Data CCSID 1208 ENCODING 546);
+		DECLARE charInputMsg4 CHARACTER CAST(blobInputMsg1 AS CHARACTER CCSID 1208 ENCODING 546);
+		SET OutputRoot.JSON.Data.CHANNELID=InputRoot.JSON.Data.CHANNELID;
+		DECLARE pvtpath CHARACTER;
+		DECLARE FinalResult,FinalResult1 CHARACTER;
+		SET pvtpath='C:\Users\SSC\Downloads\Pronteffcert-privkey.pem';
+		CALL signature(charInputMsg4,pvtpath) INTO FinalResult;
+		SET OutputRoot.JSON.Data.SIGN=FinalResult;
+		DECLARE encoded CHARACTER BASE64ENCODE(FinalResult);
+		DECLARE decoded BLOB BASE64DECODE(encoded);
+		DECLARE charInputMsg5 CHARACTER CAST(decoded AS CHARACTER CCSID 1208);
+		DECLARE certpath,result CHARACTER;
+		SET certpath='C:\Users\SSC\Downloads\Pronteffcert-sscert.pem';
+		CALL verify(charInputMsg5,charInputMsg4,certpath) INTO FinalResult1;
+		SET result=CAST(FinalResult1 AS BLOB CCSID 1208 );
+		CREATE LASTCHILD OF ev.Response DOMAIN 'JSON' PARSE(result);
+		SET OutputRoot.JSON.Data.BDATA=ev.Response.JSON.Data;
+	END;
+
+		CREATE PROCEDURE signature (IN payload CHAR, IN pvtpath CHAR)
+		RETURNS CHAR
+		LANGUAGE JAVA
+		EXTERNAL NAME "EncodeDecode.Generate_Signature.getSignatute";
+	
+		CREATE PROCEDURE verify(IN FinalResult CHAR, IN payload CHAR,IN certpath CHAR)
+		RETURNS CHAR
+		LANGUAGE JAVA
+		EXTERNAL NAME "EncodeDecode.Generate_Signature.verifySignature";
+  END MODULE;
