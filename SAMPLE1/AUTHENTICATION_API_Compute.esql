@@ -1,0 +1,31 @@
+
+
+CREATE COMPUTE MODULE AUTHENTICATION_API_Compute
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		
+       DECLARE username,password,CREDINTAILS,DETAILS,DETAILS1 CHARACTER;
+       SET CREDINTAILS= InputRoot.HTTPInputHeader."Authorization";
+       SET DETAILS=REPLACE(CREDINTAILS,'Basic',' ');
+       SET DETAILS1=TRIM(' ' FROM DETAILS);
+       DECLARE decoded BLOB BASE64DECODE(DETAILS1);
+	   DECLARE Value1 CHARACTER CAST(decoded AS CHARACTER CCSID 1208);
+	   SET username=SUBSTRING(Value1 BEFORE ':');
+	   SET password=SUBSTRING(Value1 AFTER ':');
+        DECLARE j INTEGER 1;
+
+		SET Environment.records[]=select * from Database.TFSINCFS.AUTHENTICATION AS a where a.USERNAME=username and a.PASSWORD=password;
+	--	FOR count AS Environment.records[] DO
+		if EXISTS(Environment.records[]) then
+	--	IF (InputRoot.HTTPInputHeader.Username = Environment.records[j].USERNAME) OR (InputRoot.HTTPInputHeader.Password = Environment.records[j].PASSWORD)  THEN
+		 SET OutputRoot.JSON.Data.message=Environment.records;
+		else
+			SET OutputRoot.JSON.Data.message='failure';
+		end if;	
+--		SET j=j+1;
+--		END FOR;	
+		RETURN TRUE;
+	END;
+
+	
+END MODULE;

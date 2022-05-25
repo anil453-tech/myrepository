@@ -1,0 +1,29 @@
+
+
+CREATE COMPUTE MODULE WI_ENCRYPTION_DECRYPTION_MSG_FLOW_Compute
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		 DECLARE certpath,pvtpath CHARACTER;
+		 DECLARE FinalResult,FinalResult1 CHARACTER;
+		 SET certpath='E:\TOYOTA_WHATSAPP\KEYS_PUBLIC_PRIVATE_WHATSAPP\esbkblpublic.cer';
+		 DECLARE blobInputMsg1 BLOB ASBITSTREAM(InputRoot.JSON.Data CCSID 1208 ENCODING 546);
+		 DECLARE charInputMsg1 CHARACTER CAST(blobInputMsg1  AS CHARACTER CCSID 1208 ENCODING 546);
+		 CALL encrypt(charInputMsg1,certpath) INTO FinalResult;
+	--	 SET OutputRoot.JSON.Data.MESSAGE=FinalResult;
+		 
+	    SET pvtpath='E:\TOYOTA_WHATSAPP\KEYS_PUBLIC_PRIVATE_WHATSAPP\esbkbl.pem';
+		CALL decrypt(FinalResult,pvtpath) INTO FinalResult1; 
+		SET OutputRoot.JSON.Data.Decryptedmessage=FinalResult1;
+		RETURN TRUE;
+	END;
+
+   CREATE PROCEDURE encrypt (IN charInputMsg1 CHAR, IN certpath CHAR) 
+   RETURNS CHAR
+   LANGUAGE JAVA
+   EXTERNAL NAME "ENCRYPTION.EncryptionCBS.encrypt";
+   
+   CREATE PROCEDURE decrypt (IN FinalResult CHAR, IN pvtpath CHAR) 
+   RETURNS CHAR
+   LANGUAGE JAVA
+   EXTERNAL NAME "ENCRYPTION.DecryptionCBS.decrypt";
+END MODULE;
