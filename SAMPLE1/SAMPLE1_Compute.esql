@@ -1,0 +1,79 @@
+
+
+CREATE COMPUTE MODULE SAMPLE1_Compute
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		DECLARE Transaction_ID CHARACTER CAST(InputRoot.JSON.Data.Transaction_ID AS CHARACTER CCSID 1208 ENCODING 546);
+		DECLARE TRANSACTIONID CHARACTER InputRoot.JSON.Data.Transaction_ID;
+		SET Environment.DefaultRecord.CorelationId =122;
+		set Environment.DefaultRecord.IntegrationNode=BrokerName;
+		set Environment.DefaultRecord.IntegrationServer=ExecutionGroupLabel;
+		set Environment.DefaultRecord.ApplicationName=ApplicationLabel;
+		set Environment.DefaultRecord.FlowName=MessageFlowLabel;
+		set Environment.DefaultRecord.Logtype='request';
+		set Environment.DefaultRecord.LOGLEVEL='information';
+		
+		set Environment.AuditRecord.BackendURL='-'; 
+		set Environment.AuditRecord.ESBURL = InputRoot.HTTPInputHeader."X-Original-HTTP-Command";
+		set Environment.AuditRecord.FLAG='Y';
+		DECLARE blobInputMsg BLOB ASBITSTREAM(InputRoot.JSON.Data CCSID 1208 ENCODING 546);
+		DECLARE charInputMsg1 CHARACTER CAST(blobInputMsg AS CHARACTER CCSID 1208 ENCODING 546);
+		set Environment.DefaultRecord.Request=charInputMsg1;
+		set Environment.DefaultRecord.BACKEND_REQUEST=charInputMsg1;
+		
+--		set Environment.DefaultRecord.BACKEND_RESPONSE=' '; --need to confirm
+--		set Environment.AuditRecord.Response=' ';
+		set Environment.AuditRecord.TransactionCode='200';
+		set Environment.AuditRecord.TransactionStatus='success';
+		
+
+		set Environment.AuditRecord.REQUESTHEADER =InputRoot.HTTPInputHeader;
+		set Environment.AuditRecord.RESPONSEHEADER= Environment.ESB.HttpInputHeader;
+		
+		
+		DECLARE inputStringDate CHARACTER InputRoot.JSON.Data.Date;
+		DECLARE outputStringDate DATE;
+		DECLARE patternInput CHARACTER 'dd-MMM-yy';
+		SET outputStringDate = CAST(inputStringDate AS DATE FORMAT patternInput);
+		IF LENGTH(TRANSACTIONID) <= '30' THEN
+			IF LENGTH(InputRoot.JSON.Data.Mobile_Number) = '10' THEN
+				CALL mobileverify(TRANSACTIONID, outputStringDate, InputRoot.JSON.Data.Mobile_Number, Environment.ResultSet1[], Environment.ResultSet2[], Environment.ResultSet3[], Environment.ResultSet4[]);
+				DECLARE LANID CHARACTER Environment.ResultSet4;
+				DECLARE Indx INTEGER 1;
+				WHILE LENGTH(LANID) > 1 DO
+					SET Environment.Variables.Response.Field[Indx] = SUBSTRING(LANID BEFORE '|');
+					SET LANID = SUBSTRING(LANID AFTER '|');
+					SET Indx  = Indx + 1;
+				END WHILE;
+				SET OutputRoot.JSON.Data.Transaction_ID = TRANSACTIONID;
+				SET OutputRoot.JSON.Data.Res_Code 		= Environment.ResultSet1;
+				SET OutputRoot.JSON.Data.Res_Desc 		= Environment.ResultSet2;
+				SET OutputRoot.JSON.Data.EMAIL 			= Environment.ResultSet3;
+				CREATE FIELD OutputRoot.JSON.Data.Lan_ID IDENTITY (JSON.Array)Lan_ID;
+				SET OutputRoot.JSON.Data.Lan_ID.Item[] = Environment.Variables.Response.Field[];
+			ELSEIF LENGTH(InputRoot.JSON.Data.Mobile_Number) > '10' THEN
+				SET OutputRoot.JSON.Data.Transaction_ID = TRANSACTIONID;
+				SET OutputRoot.JSON.Data.Res_Code 		= '2';
+				SET OutputRoot.JSON.Data.Res_Desc 		= 'Mobile Number should not be greaterthan 10 characters';
+			ELSEIF LENGTH(InputRoot.JSON.Data.Mobile_Number) < '10' THEN
+				SET OutputRoot.JSON.Data.Transaction_ID	= TRANSACTIONID;
+				SET OutputRoot.JSON.Data.Res_Code 		= '2';
+				SET OutputRoot.JSON.Data.Res_Desc 		= 'Mobile Number should not be lessthan 10 characters';
+			END IF;
+		ELSE
+			SET OutputRoot.JSON.Data.Transaction_ID = TRANSACTIONID;
+			SET OutputRoot.JSON.Data.Res_Code 		= '2';
+			SET OutputRoot.JSON.Data.Res_Desc 		= 'Transaction Id should not be more than 30 characters';
+		END IF;
+		 DECLARE blobInputMsg1 BLOB ASBITSTREAM(OutputRoot.JSON.Data CCSID 1208 ENCODING 546);
+		 DECLARE charInputMsg4 CHARACTER CAST(blobInputMsg1 AS CHARACTER CCSID 1208 ENCODING 546);
+		 SET Environment.AuditRecord.Response=charInputMsg4;
+		PROPAGATE TO TERMINAL 'out1' delete none;
+		RETURN TRUE;
+	END;
+	CREATE PROCEDURE mobileverify(INOUT TRANSACTIONID CHAR,IN REQUEST_DATE DATE, IN MOB_NO CHAR, OUT RES_CODE CHAR, OUT RES_DESC CHAR, OUT EMAIL CHAR, OUT LANID CHAR)
+	LANGUAGE DATABASE
+	EXTERNAL NAME "CORELEA.MOBILE_VALIDATION";
+		
+	
+END MODULE;
